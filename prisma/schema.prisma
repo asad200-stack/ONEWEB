@@ -1,0 +1,274 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// Users table - platform-wide users
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  password  String
+  name      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  storeMembers StoreMember[]
+  stores       Store[] @relation("StoreOwner")
+
+  @@index([email])
+}
+
+// Stores table - each store is a tenant
+model Store {
+  id          String   @id @default(cuid())
+  name        String
+  slug        String   @unique // Used in URL: /store/{slug}
+  ownerId     String
+  description String?
+  logo        String?  // Logo image path
+  coverImage  String?  // Cover image path
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relations
+  owner            User            @relation("StoreOwner", fields: [ownerId], references: [id], onDelete: Cascade)
+  settings         StoreSettings?
+  members          StoreMember[]
+  products         Product[]
+  categories       Category[]
+  tags             Tag[]
+  customers        Customer[]
+  messages         Message[]
+  viewsStats       ViewsStats[]
+  activityLogs     ActivityLog[]
+  promotionalBanners PromotionalBanner[]
+
+  @@index([slug])
+  @@index([ownerId])
+}
+
+// Store Members - users with roles in a store
+model StoreMember {
+  id      String   @id @default(cuid())
+  userId  String
+  storeId String
+  role    String   @default("Viewer") // Owner, Editor, Viewer
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  store Store @relation(fields: [storeId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, storeId])
+  @@index([storeId])
+  @@index([userId])
+}
+
+// Store Settings - theme and customization
+model StoreSettings {
+  id              String   @id @default(cuid())
+  storeId         String   @unique
+  primaryColor    String   @default("#000000")
+  secondaryColor  String   @default("#ffffff")
+  fontFamily      String   @default("Inter")
+  displayMode     String   @default("grid") // grid, cards
+  language        String   @default("en") // en, ar
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  // Relations
+  store Store @relation(fields: [storeId], references: [id], onDelete: Cascade)
+}
+
+// Categories
+model Category {
+  id          String   @id @default(cuid())
+  storeId     String
+  name        String
+  slug        String
+  description String?
+  image       String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relations
+  store    Store     @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  products Product[]
+
+  @@unique([storeId, slug])
+  @@index([storeId])
+}
+
+// Tags
+model Tag {
+  id        String   @id @default(cuid())
+  storeId   String
+  name      String
+  slug      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  store    Store     @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  products Product[]
+
+  @@unique([storeId, slug])
+  @@index([storeId])
+}
+
+// Products
+model Product {
+  id              String   @id @default(cuid())
+  storeId         String
+  name            String
+  slug            String
+  description     String?  @db.Text
+  specifications  String?  @db.Text
+  categoryId      String?
+  sku             String?
+  price           Decimal  @db.Decimal(10, 2)
+  discountedPrice Decimal? @db.Decimal(10, 2)
+  discountActive  Boolean  @default(false)
+  currency        String   @default("USD")
+  stock           Int      @default(0)
+  isActive        Boolean  @default(true)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  // Relations
+  store     Store          @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  category  Category?      @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  tags      Tag[]
+  images    ProductImage[]
+  viewsStats ViewsStats[]
+
+  @@unique([storeId, slug])
+  @@index([storeId])
+  @@index([categoryId])
+  @@index([isActive])
+}
+
+// Product Images
+model ProductImage {
+  id        String   @id @default(cuid())
+  productId String
+  url       String   // Path to image file
+  alt       String?
+  order     Int      @default(0) // For ordering images
+  createdAt DateTime @default(now())
+
+  // Relations
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@index([productId])
+}
+
+// Customers
+model Customer {
+  id        String   @id @default(cuid())
+  storeId   String
+  name      String
+  email     String
+  phone     String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  store    Store     @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  messages Message[]
+
+  @@index([storeId])
+  @@index([email])
+}
+
+// Messages / Inquiries
+model Message {
+  id        String   @id @default(cuid())
+  storeId   String
+  customerId String?
+  name      String
+  email     String
+  phone     String?
+  subject   String?
+  content   String   @db.Text
+  isRead    Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  store    Store     @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  customer Customer? @relation(fields: [customerId], references: [id], onDelete: SetNull)
+
+  @@index([storeId])
+  @@index([isRead])
+}
+
+// Views Statistics
+model ViewsStats {
+  id        String   @id @default(cuid())
+  storeId   String
+  productId String?
+  type      String   // "store" or "product"
+  ipAddress String?
+  userAgent String?
+  createdAt DateTime @default(now())
+
+  // Relations
+  store   Store    @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  product Product? @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@index([storeId])
+  @@index([productId])
+  @@index([createdAt])
+}
+
+// Activity Logs
+model ActivityLog {
+  id        String   @id @default(cuid())
+  storeId   String
+  userId    String
+  userName  String
+  action    String   // "create", "update", "delete", "activate", "deactivate"
+  entity    String   // "product", "category", "settings", "user", etc.
+  entityId  String?
+  details   String?  @db.Text // JSON string with additional details
+  createdAt DateTime @default(now())
+
+  // Relations
+  store Store @relation(fields: [storeId], references: [id], onDelete: Cascade)
+
+  @@index([storeId])
+  @@index([userId])
+  @@index([createdAt])
+}
+
+// Promotional Banners
+model PromotionalBanner {
+  id          String   @id @default(cuid())
+  storeId     String
+  title       String?
+  subtitle    String?
+  description String?  @db.Text
+  imageUrl    String?  // Banner image path
+  linkUrl     String?  // Optional link
+  order       Int      @default(0) // Display order
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relations
+  store Store @relation(fields: [storeId], references: [id], onDelete: Cascade)
+
+  @@index([storeId])
+  @@index([isActive, order])
+}
+
